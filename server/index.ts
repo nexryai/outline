@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-floating-promises */
 /* eslint-disable @typescript-eslint/no-misused-promises */
 /* eslint-disable import/order */
 import env from "./env";
@@ -12,14 +13,12 @@ import logger from "koa-logger";
 import Router from "koa-router";
 import { AddressInfo } from "net";
 import stoppable from "stoppable";
-import throng from "throng";
 import Logger from "./logging/Logger";
 import services from "./services";
 import { getArg } from "./utils/args";
 import { getSSLOptions } from "./utils/ssl";
 import { defaultRateLimiter } from "@server/middlewares/rateLimiter";
 import { printEnv, checkPendingMigrations } from "./utils/startup";
-import { checkUpdates } from "./utils/updates";
 import onerror from "./onerror";
 import ShutdownHelper, { ShutdownOrder } from "./utils/ShutdownHelper";
 import { checkConnection, sequelize } from "./storage/database";
@@ -42,7 +41,7 @@ if (env.SERVICES.includes("collaboration")) {
   webProcessCount = 1;
 }
 
-// This function will only be called once in the original process
+/* This function will only be called once in the original process
 async function master() {
   await checkConnection(sequelize);
   await checkPendingMigrations();
@@ -53,6 +52,7 @@ async function master() {
     setInterval(checkUpdates, 24 * 3600 * 1000);
   }
 }
+*/
 
 // This function will only be called in each forked process
 async function start(_id: number, disconnect: () => void) {
@@ -196,6 +196,18 @@ async function start(_id: number, disconnect: () => void) {
   process.once("SIGINT", () => ShutdownHelper.execute());
 }
 
+await checkConnection(sequelize);
+await checkPendingMigrations();
+await printEnv();
+
+start(0, () => {
+  // Do nothing
+}).catch((err) => {
+  Logger.error("Failed to start server", err);
+  process.exit(1);
+});
+
+/*
 const isWebProcess =
   env.SERVICES.includes("web") ||
   env.SERVICES.includes("api") ||
@@ -206,3 +218,4 @@ void throng({
   worker: start,
   count: isWebProcess ? webProcessCount : undefined,
 });
+*/
