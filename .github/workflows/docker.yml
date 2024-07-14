@@ -18,7 +18,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - uses: docker/build-push-action@v5
         with:
-          dockerfile: Dockerfile.alpine
+          file: Dockerfile.alpine
           context: .
           push: true
           tags: nexryai/outline:latest
