@@ -196,14 +196,21 @@ async function start(_id: number, disconnect: () => void) {
   process.once("SIGINT", () => ShutdownHelper.execute());
 }
 
-await checkConnection(sequelize);
-await checkPendingMigrations();
-await printEnv();
+async function boot() {
+  await checkConnection(sequelize);
+  await checkPendingMigrations();
+  await printEnv();
 
-start(0, () => {
-  // Do nothing
-}).catch((err) => {
-  Logger.error("Failed to start server", err);
+  start(0, () => {
+    // Do nothing
+  }).catch((err) => {
+    Logger.error("Failed to start server", err);
+    process.exit(1);
+  });
+}
+
+boot().catch((err) => {
+  Logger.error("Failed to init server", err);
   process.exit(1);
 });
 
