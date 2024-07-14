@@ -1,0 +1,49 @@
+# Build npmrun
+FROM rust:1-alpine as npmrun-builder
+WORKDIR /src
+
+RUN apk add --no-cache git alpine-sdk
+
+RUN git clone https://github.com/nexryai/npmrun.git .
+RUN cargo build --release
+
+# Build Outline
+FROM node:20-alpine AS builder
+
+WORKDIR /opt/outline
+COPY ./package.json ./yarn.lock ./
+COPY ./patches ./patches
+
+RUN yarn install --no-optional --frozen-lockfile --network-timeout 1000000
+
+COPY . .
+ARG CDN_URL
+
+RUN yarn build
+RUN rm -rf node_modules
+RUN yarn install --production=true --frozen-lockfile --network-timeout 1000000
+
+FROM node:20-alpine AS runner
+ENV NODE_ENV production
+ENV PORT 3000
+
+WORKDIR /opt/outline
+
+COPY --from=builder /opt/outline/build ./build
+COPY --from=builder /opt/outline/server ./server
+COPY --from=builder /opt/outline/public ./public
+COPY --from=builder /opt/outline/.sequelizerc ./.sequelizerc
+COPY --from=builder /opt/outline/node_modules ./node_modules
+COPY --from=builder /opt/outline/package.json ./package.json
+COPY --from=npmrun-builder /src/target/release/npmrun /usr/local/bin/npmrun
+
+RUN apk add --no-cache tini && \
+    addgroup -g 1001 nodejs && \
+    adduser -u 1001 -G nodejs -D nodejs && \
+    chown -R nodejs:nodejs /opt/outline/build && \
+    mkdir -p /var/lib/outline && \
+    chown -R nodejs:nodejs /var/lib/outline
+    
+USER nodejs
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["npmrun", "start"]
