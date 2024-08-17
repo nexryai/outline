@@ -99,21 +99,15 @@ export default async function documentCreator({
       importId,
       sourceMetadata,
       fullWidth: templateDocument ? templateDocument.fullWidth : fullWidth,
-      emoji: templateDocument ? templateDocument.emoji : icon,
-      icon: templateDocument ? templateDocument.emoji : icon,
+      icon: templateDocument ? templateDocument.icon : icon,
       color: templateDocument ? templateDocument.color : color,
       title: TextHelper.replaceTemplateVariables(
         templateDocument ? templateDocument.title : title,
         user
       ),
-      text: await TextHelper.replaceImagesWithAttachments(
-        TextHelper.replaceTemplateVariables(
-          templateDocument ? templateDocument.text : text,
-          user
-        ),
-        user,
-        ip,
-        transaction
+      text: TextHelper.replaceTemplateVariables(
+        templateDocument ? templateDocument.text : text,
+        user
       ),
       content: templateDocument
         ? ProsemirrorHelper.replaceTemplateVariables(
@@ -148,28 +142,30 @@ export default async function documentCreator({
   );
 
   if (publish) {
-    if (!collectionId) {
+    if (!collectionId && !template) {
       throw new Error("Collection ID is required to publish");
     }
 
-    await document.publish(user, collectionId, { transaction });
-    await Event.create(
-      {
-        name: "documents.publish",
-        documentId: document.id,
-        collectionId: document.collectionId,
-        teamId: document.teamId,
-        actorId: user.id,
-        data: {
-          source: importId ? "import" : undefined,
-          title: document.title,
+    await document.publish(user, collectionId, { silent: true, transaction });
+    if (document.title) {
+      await Event.create(
+        {
+          name: "documents.publish",
+          documentId: document.id,
+          collectionId: document.collectionId,
+          teamId: document.teamId,
+          actorId: user.id,
+          data: {
+            source: importId ? "import" : undefined,
+            title: document.title,
+          },
+          ip,
         },
-        ip,
-      },
-      {
-        transaction,
-      }
-    );
+        {
+          transaction,
+        }
+      );
+    }
   }
 
   // reload to get all of the data needed to present (user, collection etc)

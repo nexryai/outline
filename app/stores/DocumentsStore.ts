@@ -457,7 +457,15 @@ export default class DocumentsStore extends Store<Document> {
   };
 
   @action
-  templatize = async (id: string): Promise<Document | null | undefined> => {
+  templatize = async ({
+    id,
+    collectionId,
+    publish,
+  }: {
+    id: string;
+    collectionId: string | null;
+    publish: boolean;
+  }): Promise<Document | null | undefined> => {
     const doc: Document | null | undefined = this.data.get(id);
     invariant(doc, "Document should exist");
 
@@ -467,6 +475,8 @@ export default class DocumentsStore extends Store<Document> {
 
     const res = await client.post("/documents.templatize", {
       id,
+      collectionId,
+      publish,
     });
     invariant(res?.data, "Document not available");
     this.addPolicies(res.policies);
@@ -500,17 +510,22 @@ export default class DocumentsStore extends Store<Document> {
         this.data.get(id) || this.getByUrl(id);
       const policy = doc ? this.rootStore.policies.get(doc.id) : undefined;
 
-      if (doc && policy && !options.force) {
-        if (!options.shareId) {
-          return {
-            document: doc,
-          };
-        } else if (this.sharedCache.has(options.shareId)) {
-          return {
-            document: doc,
-            ...this.sharedCache.get(options.shareId),
-          };
-        }
+      if (doc && policy && !options.shareId && !options.force) {
+        return {
+          document: doc,
+        };
+      }
+
+      if (
+        doc &&
+        options.shareId &&
+        !options.force &&
+        this.sharedCache.has(options.shareId)
+      ) {
+        return {
+          document: doc,
+          ...this.sharedCache.get(options.shareId),
+        };
       }
 
       const res = await client.post("/documents.info", {
@@ -546,12 +561,17 @@ export default class DocumentsStore extends Store<Document> {
   };
 
   @action
-  move = async (
-    documentId: string,
-    collectionId: string,
-    parentDocumentId?: string | null,
-    index?: number | null
-  ) => {
+  move = async ({
+    documentId,
+    collectionId,
+    parentDocumentId,
+    index,
+  }: {
+    documentId: string;
+    collectionId?: string | null;
+    parentDocumentId?: string | null;
+    index?: number | null;
+  }) => {
     this.movingDocumentId = documentId;
 
     try {
@@ -789,7 +809,7 @@ export default class DocumentsStore extends Store<Document> {
 
   unstar = (document: Document) => {
     const star = this.rootStore.stars.orderedData.find(
-      (star) => star.documentId === document.id
+      (s) => s.documentId === document.id
     );
     return star?.delete();
   };
@@ -802,9 +822,7 @@ export default class DocumentsStore extends Store<Document> {
 
   unsubscribe = (userId: string, document: Document) => {
     const subscription = this.rootStore.subscriptions.orderedData.find(
-      (subscription) =>
-        subscription.documentId === document.id &&
-        subscription.userId === userId
+      (s) => s.documentId === document.id && s.userId === userId
     );
 
     return subscription?.delete();

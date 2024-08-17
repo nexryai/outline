@@ -45,7 +45,12 @@ export class DocumentHelper {
    * @param document The document or revision to convert
    * @returns The document content as a Prosemirror Node
    */
-  static toProsemirror(document: Document | Revision | Collection) {
+  static toProsemirror(
+    document: Document | Revision | Collection | ProsemirrorData
+  ) {
+    if ("type" in document && document.type === "doc") {
+      return Node.fromJSON(schema, document);
+    }
     if ("content" in document && document.content) {
       return Node.fromJSON(schema, document.content);
     }
@@ -72,17 +77,27 @@ export class DocumentHelper {
     document: Document | Revision | Collection,
     options?: {
       /** The team context */
-      teamId: string;
+      teamId?: string;
       /** Whether to sign attachment urls, and if so for how many seconds is the signature valid */
-      signedUrls: number;
+      signedUrls?: number;
       /** Marks to remove from the document */
       removeMarks?: string[];
+      /** The base path to use for internal links (will replace /doc/) */
+      internalUrlBase?: string;
     }
   ): Promise<ProsemirrorData> {
     let doc: Node | null;
     let json;
 
     if ("content" in document && document.content) {
+      // Optimized path for documents with content available and no transformation required.
+      if (
+        !options?.removeMarks &&
+        !options?.signedUrls &&
+        !options?.internalUrlBase
+      ) {
+        return document.content;
+      }
       doc = Node.fromJSON(schema, document.content);
     } else if ("state" in document && document.state) {
       const ydoc = new Y.Doc();
@@ -94,7 +109,7 @@ export class DocumentHelper {
       doc = parser.parse(document.text);
     }
 
-    if (doc && options?.signedUrls) {
+    if (doc && options?.signedUrls && options?.teamId) {
       json = await ProsemirrorHelper.signAttachmentUrls(
         doc,
         options.teamId,
@@ -102,6 +117,13 @@ export class DocumentHelper {
       );
     } else {
       json = doc?.toJSON() ?? {};
+    }
+
+    if (options?.internalUrlBase) {
+      json = ProsemirrorHelper.replaceInternalUrls(
+        json,
+        options.internalUrlBase
+      );
     }
 
     if (options?.removeMarks) {
@@ -122,8 +144,8 @@ export class DocumentHelper {
     const node = DocumentHelper.toProsemirror(document);
     const textSerializers = Object.fromEntries(
       Object.entries(schema.nodes)
-        .filter(([, node]) => node.spec.toPlainText)
-        .map(([name, node]) => [name, node.spec.toPlainText])
+        .filter(([, n]) => n.spec.toPlainText)
+        .map(([name, n]) => [name, n.spec.toPlainText])
     );
 
     return textBetween(node, 0, node.content.size, textSerializers);
@@ -135,10 +157,12 @@ export class DocumentHelper {
    * @param document The document or revision to convert
    * @returns The document title and content as a Markdown string
    */
-  static toMarkdown(document: Document | Revision | Collection) {
+  static toMarkdown(
+    document: Document | Revision | Collection | ProsemirrorData
+  ) {
     const text = serializer
       .serialize(DocumentHelper.toProsemirror(document))
-      .replace(/\n\\(\n|$)/g, "\n\n")
+      .replace(/(^|\n)\\(\n|$)/g, "\n\n")
       .replace(/“/g, '"')
       .replace(/”/g, '"')
       .replace(/‘/g, "'")
@@ -149,14 +173,17 @@ export class DocumentHelper {
       return text;
     }
 
-    const icon = document.icon ?? document.emoji;
-    const iconType = determineIconType(icon);
+    if (document instanceof Document || document instanceof Revision) {
+      const iconType = determineIconType(document.icon);
 
-    const title = `${iconType === IconType.Emoji ? icon + " " : ""}${
-      document.title
-    }`;
+      const title = `${iconType === IconType.Emoji ? document.icon + " " : ""}${
+        document.title
+      }`;
 
-    return `# ${title}\n\n${text}`;
+      return `# ${title}\n\n${text}`;
+    }
+
+    return text;
   }
 
   /**
@@ -445,5 +472,27 @@ export class DocumentHelper {
     }
 
     return document;
+  }
+
+  /**
+   * Compares two documents and returns true if the text content is equal. This does not take into account
+   * changes to other properties such as table column widths, other visual settings.
+   *
+   * @param document The document to compare
+   * @param other The other document to compare
+   * @returns True if the text content is equal
+   */
+  public static isTextContentEqual(
+    before: Document | Revision | null,
+    after: Document | Revision | null
+  ) {
+    if (!before || !after) {
+      return false;
+    }
+
+    return (
+      before.title === after.title &&
+      this.toMarkdown(before) === this.toMarkdown(after)
+    );
   }
 }
